@@ -156,11 +156,11 @@ jobs:
 
           "${compose[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$postgres_db" \
             -c "CREATE TABLE IF NOT EXISTS ci_persistence_probe (marker_key text PRIMARY KEY, marker_value text NOT NULL)"
-          "${compose[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$postgres_db" \
-            -v marker_key="$marker_key" -v marker_value="$marker_value" \
-            -c "INSERT INTO ci_persistence_probe (marker_key, marker_value) VALUES (:'marker_key', :'marker_value')"
-          before="$("${compose[@]}" exec -T postgres psql -At -U "$postgres_user" -d "$postgres_db" \
-            -v marker_key="$marker_key" -c "SELECT marker_value FROM ci_persistence_probe WHERE marker_key = :'marker_key'")"
+          printf "INSERT INTO ci_persistence_probe (marker_key, marker_value) VALUES ('%s', '%s');\n" \
+            "$marker_key" "$marker_value" |
+            "${compose[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U "$postgres_user" -d "$postgres_db"
+          before="$(printf "SELECT marker_value FROM ci_persistence_probe WHERE marker_key = '%s';\n" "$marker_key" |
+            "${compose[@]}" exec -T postgres psql -At -U "$postgres_user" -d "$postgres_db")"
           test "$before" = "$marker_value"
           echo "Marker before PostgreSQL recreation: $before"
 
@@ -188,8 +188,8 @@ jobs:
 
           volume_after="$(docker inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' "$postgres_id")"
           test "$volume_after" = "$volume_before"
-          after="$("${compose[@]}" exec -T postgres psql -At -U "$postgres_user" -d "$postgres_db" \
-            -v marker_key="$marker_key" -c "SELECT marker_value FROM ci_persistence_probe WHERE marker_key = :'marker_key'")"
+          after="$(printf "SELECT marker_value FROM ci_persistence_probe WHERE marker_key = '%s';\n" "$marker_key" |
+            "${compose[@]}" exec -T postgres psql -At -U "$postgres_user" -d "$postgres_db")"
           test "$after" = "$marker_value"
           echo "PostgreSQL data volume after recreation: $volume_after"
           echo "Marker after PostgreSQL recreation: $after"
